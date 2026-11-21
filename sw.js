@@ -1,6 +1,6 @@
 // Annales service worker. Keep VERSION in sync with APP_VERSION in js/main.js (and suite-app.json).
 // Touches only caches named "annales-cache-*"; never another app's caches.
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const CACHE = 'annales-cache-' + VERSION;
 const ASSETS = [
   './',
