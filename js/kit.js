@@ -5,10 +5,10 @@ import * as store from './store.js';
 import { RELEASE_TYPES } from './model.js';
 
 // ---------- tiny DOM helper ----------
-// DOM replaceChildren turns null/false into the text "null"/"false"; skip them like h() does.
+// DOM replaceChildren turns null/false into the text "null"/"false" and does not flatten arrays; do both like h() does.
 {
   const native = Element.prototype.replaceChildren;
-  Element.prototype.replaceChildren = function (...kids) { return native.apply(this, kids.filter(k => k != null && k !== false)); };
+  Element.prototype.replaceChildren = function (...kids) { return native.apply(this, kids.flat(Infinity).filter(k => k != null && k !== false)); };
 }
 
 export function h(tag, props, ...kids) {

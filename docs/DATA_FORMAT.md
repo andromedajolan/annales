@@ -20,7 +20,7 @@ Made by Data → Export catalogue as `annales-backup-YYYY-MM-DD.json`.
   "format": "annales-backup",
   "schema": 2,
   "app": "annales",
-  "appVersion": "0.4.0",
+  "appVersion": "0.5.0",
   "exported": "2026-11-20T18:00:00.000Z",
   "songs": [ { "...": "see Song" } ],
   "releases": [ { "...": "see Release" } ],
@@ -43,13 +43,15 @@ Schema 1 files (version 0.1.0, songs and releases only) still import; `posts`, `
 | `key`, `mode`, `timeSig` | string | e.g. `A`, `minor`, `4/4` |
 | `bpm` | number or null | 20 to 400 |
 | `length` | integer or null | Seconds |
-| `releaseDate` | `YYYY-MM-DD` or `""` | |
+| `releaseDate` | `YYYY-MM-DD` or `""` | Typed by hand, or filled from Stilus `release.date` when empty. A value already here is never overwritten by an import |
 | `status` | string | `idea`, `written`, `produced`, `mastered`, `released` |
 | `isrc`, `upc` | string | Typed by hand |
 | `copyright` | `{ status, date }` | `status`: `none`, `pending`, `registered`; `date`: `YYYY-MM-DD` or `""` |
 | `meaning` | string | What the song is about, in her words |
 | `notes` | string | |
 | `stilusId` | string | Id of the linked Stilus song, or `""` |
+| `lyrics` | string | Read-only copy of the Stilus lyrics: clean text, no chords or tags. Each section is its name on its own line (`Verse 1`, `Chorus`, or the custom label), then its lines; sections are separated by a blank line. Up to 60,000 characters. Annales never edits it; only a Stilus import changes it |
+| `lyricsUpdated` | ISO 8601 UTC or `""` | The Stilus `updated` time of the lyrics last imported; `""` when there are no lyrics |
 | `created`, `updated` | ISO 8601 UTC | |
 
 ### Release
@@ -109,12 +111,20 @@ Deleting a post deletes its numbers. Deleting a release deletes its numbers but 
 
 ## Stilus import
 
-Accepted: a Stilus backup (`format: "lyricwriter-backup"` with a `songs` array), an array of songs, or one song. Only these Stilus fields are read: `id`, `title`, `key`, `mode`, `bpm`, `timeSig`, `release` (`type`: `none`, `album`, `single`, `pool`; `name`), `notes.meaning`, `created`. Anything else is ignored. Songs without an `id` are skipped.
+Accepted: a Stilus backup (`format: "lyricwriter-backup"` with a `songs` array), an array of songs, or one song. Only these Stilus fields are read: `id`, `title`, `key`, `mode`, `bpm`, `timeSig`, `release` (`type`: `none`, `album`, `single`, `pool`; `name`; `date`), `notes.meaning`, `sections[]` (`type`, `label`, `lyrics`), `updated` and `created`. Anything else is ignored. Songs without an `id` are skipped. Every new field is optional, so a backup from before they existed still imports.
 
 The Stilus `id` is kept as `stilusId`, so importing again updates the same song instead of adding a copy.
 
+**Release date.** `release.date` (`YYYY-MM-DD`; a longer ISO date-time is cut to its date) fills the song's `releaseDate` when that is empty. It is never overwritten.
+
+**Only songs with a release date.** The import dialog has a checkbox, on by default: only songs with a release date are brought in, and the dialog and the confirmation say how many drafts were skipped. A song counts as a draft when its Stilus `release.date` is missing or empty, so a Stilus backup that has no dates at all previews as all drafts; untick the box to import them anyway. The option applies to updates as well as new songs.
+
+**Lyrics.** Built from `sections` in order, skipping sections with no lyric text. Each section starts with its name: the `label` if there is one, otherwise the `type`, numbered (`Verse 1`, `Verse 2`) when that type occurs more than once. All bracketed text is removed, so chords such as `[Cm]` and tags such as `[soft]` do not appear, and a line that held only brackets is dropped. If a song has no `sections` but a plain-text `lyrics` string, that text is cleaned the same way and used without section names. The result is stored in the song's `lyrics`, with `lyricsUpdated` set to the song's Stilus `updated` time.
+
+**Refreshing.** Lyrics are replaced when the Stilus text is not empty, differs from what is stored, and is newer (its `updated` is later than `lyricsUpdated`), or when nothing has been imported yet or a timestamp is missing. An older backup never rolls them back, and empty Stilus lyrics never clear what is stored.
+
 - New song: status `written`, artist = the default artist name from Settings. If the Stilus release has a type and name, the matching release (same type and title) is reused or created, and the song is added at the next track number.
-- Existing song: Stilus updates `title`, `key`, `mode`, `bpm`, `timeSig` and `meaning`, but an empty Stilus value never clears what is already here. Status, IDs, rights, notes and the track number are never touched. A release is only linked if the song has none yet.
+- Existing song: Stilus updates `title`, `key`, `mode`, `bpm`, `timeSig`, `meaning` and the lyrics, but an empty Stilus value never clears what is already here. Status, IDs, rights, notes and the track number are never touched. A release is only linked if the song has none yet.
 
 ## Launcher hooks (read-only for Ianua)
 
@@ -124,7 +134,7 @@ The Stilus `id` is kept as `stilusId`, so importing again updates the same song 
 {
   "schema": 1,
   "appId": "annales",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "lastOpened": "2026-11-20T18:00:00.000Z",
   "recent": [ { "id": "sng_ab12cd34ef56ab12", "title": "Song title", "updated": "2026-11-20T17:58:00.000Z" } ]
 }
@@ -135,5 +145,5 @@ The Stilus `id` is kept as `stilusId`, so importing again updates the same song 
 `/annales/suite-app.json`:
 
 ```json
-{ "schema": 1, "id": "annales", "name": "Annales", "version": "0.4.0", "updated": "2026-11-20" }
+{ "schema": 1, "id": "annales", "name": "Annales", "version": "0.5.0", "updated": "2026-11-20" }
 ```

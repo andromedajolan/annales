@@ -78,6 +78,8 @@ export function normalizeSong(r) {
     meaning: text(r.meaning),
     notes: text(r.notes),
     stilusId: str(r.stilusId, 120),
+    lyrics: text(r.lyrics, 60000),
+    lyricsUpdated: r.lyrics ? toIso(r.lyricsUpdated, '') : '',
     created,
     updated: toIso(r.updated, created),
   };

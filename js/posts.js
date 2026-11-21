@@ -1,6 +1,7 @@
 // Stage 3: promo planner (month grid or list) and the caption tool.
 // One caption per post (pasted across Instagram, Facebook and Threads), separate on-screen video text.
 import * as store from './store.js';
+import { lyricsPicker } from './lyrics.js';
 import { h, toast, modal, confirmBox, notFound, getUi, setUi, select, field, pill, plural, cap, copyText } from './kit.js';
 import { POST_STATUS, todayStr, addDays, weekdayOf, fmtDayLong, fmtMonth, monthGrid } from './model.js';
 import { metricPanel } from './metrics.js';
@@ -157,6 +158,7 @@ export function postEditor(id) {
   // release + song + date + status
   const songSel = h('select', { 'aria-label': 'Song' });
   const meaningBox = h('div', {});
+  const lyricsBox = h('div', { class: 'lyrics-box' });
   const drawSongOptions = () => {
     const opt = s => h('option', { value: s.id }, s.title || 'Untitled');
     const sorted = Array.from(store.songs.values()).sort((a, b) => a.title.localeCompare(b.title));
@@ -187,7 +189,14 @@ export function postEditor(id) {
         },
       }, 'Add to caption')));
   };
-  songSel.addEventListener('change', () => { rec.songId = songSel.value || null; save(); drawMeaning(); });
+  const drawLyrics = () => {
+    const song = rec.songId && store.songs.get(rec.songId);
+    lyricsBox.replaceChildren(song && (song.lyrics || '').trim()
+      ? lyricsPicker(song, { caption, screenText, changed: ta => { rec[ta === caption ? 'caption' : 'onScreenText'] = ta.value; if (ta === caption) updateCounter(); save(); } })
+      : null);
+    lyricsBox.hidden = !lyricsBox.firstChild;
+  };
+  songSel.addEventListener('change', () => { rec.songId = songSel.value || null; save(); drawMeaning(); drawLyrics(); });
 
   const relSel = select([['', '— None —'], ...Array.from(store.releases.values()).sort((a, b) => a.title.localeCompare(b.title)).map(r => [r.id, r.title || 'Untitled release'])], rec.releaseId || '', v => {
     rec.releaseId = v || null; save(); drawSongOptions();
@@ -195,7 +204,7 @@ export function postEditor(id) {
   const dateIn = h('input', { type: 'date', value: rec.postDate });
   dateIn.addEventListener('input', () => { rec.postDate = dateIn.value; save(); });
   const statusSel = select(POST_STATUS.map(s => [s, cap(s)]), rec.status, v => { rec.status = v; save(); });
-  drawSongOptions(); drawMeaning();
+  drawSongOptions(); drawMeaning(); drawLyrics();
 
   const markPosted = () => {
     rec.status = 'posted';
@@ -208,8 +217,11 @@ export function postEditor(id) {
   return h('div', { class: 'view editor' },
     h('a', { class: 'back', href: '#/posts' }, '← Posts'),
     h('div', { class: 'copybar' }, copyButtons(rec, true)),
-    field('Caption (one for all Meta apps)', caption, counter),
-    field('On-screen video text', screenText),
+    h('div', { class: 'cap-row' },
+      h('div', { class: 'cap-fields' },
+        field('Caption (one for all Meta apps)', caption, counter),
+        field('On-screen video text', screenText)),
+      lyricsBox),
     field('Clip note', clip),
     h('div', { class: 'grid' },
       field('Release', relSel), field('Song', songSel), field('Post date', dateIn), field('Status', statusSel)),

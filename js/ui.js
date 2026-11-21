@@ -11,6 +11,7 @@ import { h, $, cap, typeLabel, getUi, setUi, toast, showBanner, modal, info, con
 import { checklistPanel, comingUpPanel, templatesView, templateEditor, checklistProgress } from './checklist.js';
 import { postsView, postEditor, promoPanel } from './posts.js';
 import { trackingView, summaryView } from './tracking.js';
+import { lyricsPanel } from './lyrics.js';
 
 let ctx = { version: '0.0.0' };
 let swStatus = 'checking';
@@ -192,6 +193,7 @@ function songEditor(id) {
         field('UPC', textInput(rec, 'songs', 'upc', { after: checkIds, attrs: { inputmode: 'numeric' } }), upcHint),
         field('Copyright', copySel),
         field('Copyright date', copyDate))),
+    rec.lyrics ? lyricsPanel(rec) : null,
     rec.stilusId ? h('p', { class: 'muted small' }, 'Linked to Stilus song ' + rec.stilusId) : null,
     h('div', { class: 'actions end' },
       h('button', {
@@ -213,22 +215,32 @@ async function importStilus() {
   if (!text.trim()) { toast('Choose a file or paste something first.'); return; }
   const parsed = stilus.parseStilus(text);
   if (parsed.error) { await info('Could not import', parsed.error); return; }
-  const plan = stilus.planStilus(parsed.mapped);
+  let datedOnly = true;
+  let plan = stilus.planStilus(parsed.mapped, { datedOnly });
   const skipNote = parsed.skipped ? h('p', { class: 'muted' }, parsed.skipped + ' item(s) skipped (no id).') : null;
-  if (!plan.added.length && !plan.updated.length) {
+  const summary = h('div', {});
+  const drawSummary = () => {
+    plan = stilus.planStilus(parsed.mapped, { datedOnly });
+    const nothing = !plan.added.length && !plan.updated.length;
+    summary.replaceChildren(
+      plan.added.length ? [h('p', {}, h('strong', {}, plan.added.length + ' new song(s)')), listPreview(plan.added.map(o => o.m.title))] : null,
+      plan.updated.length ? [h('p', {}, h('strong', {}, plan.updated.length + ' to update')), listPreview(plan.updated.map(o => o.ex.title || o.m.title))] : null,
+      plan.same.length ? h('p', { class: 'muted' }, plan.same.length + ' already up to date.') : null,
+      plan.newReleases ? h('p', { class: 'muted' }, plan.newReleases + ' new release(s) will be created from the Stilus release names.') : null,
+      datedOnly && plan.drafts ? h('p', { class: 'muted' }, plan.drafts + ' draft(s) skipped because they have no release date.') : null,
+      nothing ? h('p', {}, plan.same.length ? 'Nothing new to import.' : datedOnly && plan.drafts ? 'None of these songs has a release date yet. Untick the box above to import them anyway.' : 'No importable songs were found.') : null);
+  };
+  const box = h('input', { type: 'checkbox', checked: true, onchange: () => { datedOnly = box.checked; drawSummary(); } });
+  const opt = h('label', { class: 'check' }, box, ' Only songs with a release date (skip drafts)');
+  drawSummary();
+  if (!plan.added.length && !plan.updated.length && !plan.drafts) {
     await info('Nothing to import', plan.same.length ? 'All ' + plan.same.length + ' song(s) are already up to date.' : 'No importable songs were found.');
     return;
   }
-  const body = [
-    plan.added.length ? [h('p', {}, h('strong', {}, plan.added.length + ' new song(s)')), listPreview(plan.added.map(o => o.m.title))] : null,
-    plan.updated.length ? [h('p', {}, h('strong', {}, plan.updated.length + ' to update')), listPreview(plan.updated.map(o => o.ex.title || o.m.title))] : null,
-    plan.same.length ? h('p', { class: 'muted' }, plan.same.length + ' already up to date.') : null,
-    plan.newReleases ? h('p', { class: 'muted' }, plan.newReleases + ' new release(s) will be created from the Stilus release names.') : null,
-    skipNote,
-  ];
-  if ((await modal('Import from Stilus', body, [{ label: 'Cancel', value: false }, { label: 'Import', value: true, kind: 'primary' }])) !== true) return;
+  if ((await modal('Import from Stilus', [opt, summary, skipNote], [{ label: 'Cancel', value: false }, { label: 'Import', value: true, kind: 'primary' }])) !== true) return;
+  if (!plan.added.length && !plan.updated.length) { toast(datedOnly && plan.drafts ? 'Nothing imported. ' + plan.drafts + ' draft(s) have no release date.' : 'Nothing to import.'); return; }
   await stilus.applyStilus(plan);
-  toast('Imported ' + plan.added.length + ' new, updated ' + plan.updated.length + '.');
+  toast('Imported ' + plan.added.length + ' new, updated ' + plan.updated.length + (datedOnly && plan.drafts ? ', skipped ' + plan.drafts + ' draft(s)' : '') + '.');
   route();
 }
 

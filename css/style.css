@@ -318,3 +318,21 @@ th { color: var(--muted); font-weight: 500; }
 @media (prefers-reduced-motion: no-preference) {
   .btn, .card { transition: border-color .12s; }
 }
+
+/* ---- Stilus lyrics ---- */
+.check { display: flex; align-items: center; gap: .6rem; min-height: 44px; margin: 0 0 .75rem; cursor: pointer; }
+.check input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
+.lyrics-text { white-space: pre-wrap; user-select: text; -webkit-user-select: text; max-height: 28rem; overflow: auto; margin: 0 0 .75rem; padding: .75rem; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; line-height: 1.5; }
+.cap-row { display: block; }
+.lyrics-box { margin-top: .5rem; }
+.lyrics-box[hidden] { display: none; }
+.lyric-lines { margin: .5rem 0; max-height: 26rem; overflow: auto; }
+.lyric-head { margin: .75rem 0 .25rem; font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.lyric-line { display: block; width: 100%; min-height: 40px; margin: 2px 0; padding: .45rem .7rem; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.lyric-line.sel { background: color-mix(in srgb, var(--accent) 22%, var(--bg)); border-color: var(--accent); }
+.lyrics-pick .actions .btn:disabled { opacity: .45; }
+@media (min-width: 900px) {
+  main:has(.cap-row) { max-width: 1160px; }
+  .cap-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+  .lyrics-box { margin-top: 0; position: sticky; top: 7rem; }
+}
