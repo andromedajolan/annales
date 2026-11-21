@@ -1,8 +1,9 @@
 // Annales entry point. Keep APP_VERSION in sync with VERSION in sw.js and "version" in suite-app.json.
 import * as store from './store.js';
 import * as ui from './ui.js';
+import { showBanner } from './kit.js';
 
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.5.1';
 
 const THEMES = ['dark', 'gray', 'light'];
 const THEME_COLORS = { dark: '#111216', gray: '#25252b', light: '#f6f3f4' };
@@ -25,7 +26,7 @@ function setupServiceWorker() {
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || reloading) return; // first install: nothing to refresh
-    ui.showBanner('A new version of Annales is ready.', 'Reload', () => { reloading = true; location.reload(); });
+    showBanner('A new version of Annales is ready.', 'Reload', () => { reloading = true; location.reload(); });
   });
   navigator.serviceWorker.register('sw.js', { scope: './' })
     .then(() => navigator.serviceWorker.ready)
