@@ -6,28 +6,31 @@ Annales is one app in the Abditum suite and shares the origin `andromedajolan.gi
 
 | What | Name |
 | --- | --- |
-| IndexedDB database | `annales-db` (stores `songs`, `releases`) |
+| IndexedDB database | `annales-db`, version 2 (stores `songs`, `releases`, `posts`, `metrics`, `templates`; key `id`) |
 | Cache | `annales-cache-<version>` |
-| localStorage | `annales.settings`, `annales.ui`, `annales.lastBackup`, `annales.summary` |
+| localStorage | `annales.settings`, `annales.ui`, `annales.lastBackup`, `annales.summary`, `annales.pending` (crash-safety copy of unsaved edits, removed once saved) |
 | Shared (read, and written only from the Theme setting) | `studio.theme` = `dark` \| `gray` \| `light` |
 
-## Backup file (`annales-backup`, schema 1)
+## Backup file (`annales-backup`, schema 2)
 
 Made by Data → Export catalogue as `annales-backup-YYYY-MM-DD.json`.
 
 ```json
 {
   "format": "annales-backup",
-  "schema": 1,
+  "schema": 2,
   "app": "annales",
-  "appVersion": "0.1.0",
+  "appVersion": "0.4.0",
   "exported": "2026-11-20T18:00:00.000Z",
   "songs": [ { "...": "see Song" } ],
-  "releases": [ { "...": "see Release" } ]
+  "releases": [ { "...": "see Release" } ],
+  "posts": [ { "...": "see Post" } ],
+  "metrics": [ { "...": "see Number entry" } ],
+  "templates": [ { "...": "see Checklist template" } ]
 }
 ```
 
-Import refuses a backup with a higher `schema` than the app knows. Merge keeps both sides and takes the record with the newer `updated`. Replace makes the backup the whole catalogue. Songs that point to a release missing from the result lose that link.
+Schema 1 files (version 0.1.0, songs and releases only) still import; `posts`, `metrics` and `templates` are optional. Import refuses a backup with a higher `schema` than the app knows. Merge keeps both sides and takes the record with the newer `updated`. Replace makes the backup the whole catalogue. Songs and posts that point to a release or song missing from the result lose that link, and numbers whose release or post is missing are dropped.
 
 ### Song
 
@@ -61,9 +64,48 @@ Import refuses a backup with a higher `schema` than the app knows. Merge keeps b
 | `cover` | `{ thumb, name }` or null | `thumb` is a small `data:image/jpeg;base64,...` (max 320 px); `name` is the file name of the full-size cover |
 | `links` | `[{ platform, url }]` | |
 | `notes` | string | |
+| `checklist` | `[{ id, text, done, due }]` | `done` is true/false; `due` is `YYYY-MM-DD` or `""`; order is the display order |
 | `created`, `updated` | ISO 8601 UTC | |
 
 The tracklist is not stored on the release. It is the songs whose `releaseId` is the release, ordered by `track`.
+
+### Checklist template
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | string | Stable. The built-in one is `tpl_default` ("Standard release"), added once on first run and editable or deletable |
+| `name` | string | |
+| `items` | `[{ id, text, offset }]` | `offset` is whole days from the release date (negative = before). Applying a template skips items whose text is already on the checklist and sets `due` from the release's actual date, else its planned date |
+| `created`, `updated` | ISO 8601 UTC | |
+
+### Post
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | string | Stable |
+| `releaseId`, `songId` | string or null | |
+| `caption` | string | One caption for Instagram, Facebook and Threads |
+| `onScreenText` | string | Text shown in the video, kept separate |
+| `clipNote` | string | Which clip to use |
+| `postDate` | `YYYY-MM-DD` or `""` | |
+| `status` | string | `idea`, `drafted`, `scheduled`, `posted` |
+| `created`, `updated` | ISO 8601 UTC | |
+
+### Number entry (`metrics`)
+
+Typed in by hand; nothing is fetched from any platform. Values are totals as of `date`, not daily increments.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | string | Stable |
+| `scope` | string | `release` or `post` |
+| `targetId` | string | The release or post |
+| `date` | `YYYY-MM-DD` | One entry per target per date; saving the same date merges the typed values |
+| `values` | object | Release: `streams`, `saves`, `followersGained`. Post: `views`, `comments`, `saves`, `followersGained`. Whole numbers, 0 or more; only typed ones are present |
+| `note` | string | |
+| `created`, `updated` | ISO 8601 UTC | |
+
+Deleting a post deletes its numbers. Deleting a release deletes its numbers but keeps its posts (unlinked). Deleting a song keeps its posts (unlinked).
 
 ## Stilus import
 
@@ -82,7 +124,7 @@ The Stilus `id` is kept as `stilusId`, so importing again updates the same song 
 {
   "schema": 1,
   "appId": "annales",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "lastOpened": "2026-11-20T18:00:00.000Z",
   "recent": [ { "id": "sng_ab12cd34ef56ab12", "title": "Song title", "updated": "2026-11-20T17:58:00.000Z" } ]
 }
@@ -93,5 +135,5 @@ The Stilus `id` is kept as `stilusId`, so importing again updates the same song 
 `/annales/suite-app.json`:
 
 ```json
-{ "schema": 1, "id": "annales", "name": "Annales", "version": "0.1.0", "updated": "2026-11-20" }
+{ "schema": 1, "id": "annales", "name": "Annales", "version": "0.4.0", "updated": "2026-11-20" }
 ```

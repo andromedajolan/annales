@@ -7,99 +7,17 @@ import {
   fmtLength, parseLength, fmtDate, isIsrc, isUpc, safeHref,
 } from './model.js';
 
+import { h, $, cap, typeLabel, getUi, setUi, toast, showBanner, modal, info, confirmBox, pickText, listPreview, pill, select, field, hint, textInput, textArea, datalist, numOrNull, notFound, plural } from './kit.js';
+import { checklistPanel, comingUpPanel, templatesView, templateEditor, checklistProgress } from './checklist.js';
+import { postsView, postEditor, promoPanel } from './posts.js';
+import { trackingView, summaryView } from './tracking.js';
+
 let ctx = { version: '0.0.0' };
 let swStatus = 'checking';
 
-// ---------- tiny DOM helper ----------
-export function h(tag, props, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
-    else if (k in el && k !== 'list' && k !== 'form') el[k] = v;
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  const add = k => {
-    if (k == null || k === false) return;
-    if (Array.isArray(k)) k.forEach(add);
-    else el.append(k instanceof Node ? k : document.createTextNode(String(k)));
-  };
-  kids.forEach(add);
-  return el;
-}
-
-const $ = id => document.getElementById(id);
-const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-const typeLabel = t => (RELEASE_TYPES.find(x => x[0] === t) || [t, cap(t)])[1];
-
-// ---------- persisted UI state (filters) ----------
-const UI_KEY = 'annales.ui';
-const UI_DEFAULT = { artist: '', status: '', sort: 'edited', rArtist: '', rType: '', rSort: 'date' };
-const getUi = () => { try { return { ...UI_DEFAULT, ...JSON.parse(localStorage.getItem(UI_KEY)) }; } catch { return { ...UI_DEFAULT }; } };
-const setUi = (k, v) => { try { localStorage.setItem(UI_KEY, JSON.stringify({ ...getUi(), [k]: v })); } catch { /* ignore */ } };
-
-// ---------- toast, banner, dialogs ----------
-let toastTimer;
-export function toast(msg) {
-  const t = $('toast');
-  t.textContent = msg; t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
-}
-
-export function showBanner(msg, label, fn) {
-  const b = $('banner');
-  b.replaceChildren(h('span', {}, msg), label ? h('button', { class: 'btn small', type: 'button', onclick: fn }, label) : null);
-  b.hidden = false;
-}
-
-export function modal(title, body, buttons) {
-  return new Promise(resolve => {
-    const d = $('dlg');
-    // A "close" event is dispatched asynchronously. If another modal has already opened by then, ignore it.
-    const onClose = () => { if (!d.open) { d.replaceChildren(); resolve(undefined); } };
-    d.addEventListener('close', onClose, { once: true });
-    const finish = v => { d.removeEventListener('close', onClose); if (d.open) d.close(); d.replaceChildren(); resolve(v); };
-    d.replaceChildren(
-      h('h2', {}, title),
-      h('div', { class: 'dlg-body' }, body),
-      h('div', { class: 'dlg-actions' }, buttons.map(b =>
-        h('button', { class: 'btn ' + (b.kind || ''), type: 'button', onclick: () => finish(b.value) }, b.label))),
-    );
-    d.showModal();
-  });
-}
-
-const info = (title, msg) => modal(title, [h('p', {}, msg)], [{ label: 'OK', value: true, kind: 'primary' }]);
-const confirmBox = async (title, msg, okLabel, danger) =>
-  (await modal(title, [h('p', {}, msg)], [{ label: 'Cancel', value: false }, { label: okLabel, value: true, kind: danger ? 'danger' : 'primary' }])) === true;
-
-function pickText(title, intro) {
-  const picked = { text: '' };
-  const status = h('p', { class: 'muted' }, '');
-  const ta = h('textarea', { rows: 5, placeholder: '…or paste JSON here', oninput: () => { picked.text = ta.value; status.textContent = ''; } });
-  const file = h('input', {
-    type: 'file', accept: '.json,application/json,text/plain',
-    onchange: async () => {
-      const f = file.files[0];
-      if (!f) return;
-      if (f.size > io.MAX_IMPORT_BYTES) { picked.text = ''; status.textContent = 'That file is too large.'; return; }
-      picked.text = await f.text(); ta.value = '';
-      status.textContent = '✓ ' + f.name + ' (' + Math.max(1, Math.ceil(f.size / 1024)) + ' KB)';
-    },
-  });
-  return modal(title, [h('p', {}, intro), file, status, ta],
-    [{ label: 'Cancel', value: false }, { label: 'Preview', value: true, kind: 'primary' }])
-    .then(v => (v === true ? picked.text : null));
-}
-
-const listPreview = (titles, max = 8) => h('ul', { class: 'plain' },
-  titles.slice(0, max).map(t => h('li', {}, t || 'Untitled')),
-  titles.length > max ? h('li', { class: 'muted' }, '+ ' + (titles.length - max) + ' more') : null);
-
 // ---------- shell: tabs, save indicator, router ----------
-const TABS = [['#/songs', 'Songs'], ['#/releases', 'Releases'], ['#/data', 'Data']];
+const TABS = [['#/songs', 'Songs'], ['#/releases', 'Releases'], ['#/posts', 'Posts'], ['#/tracking', 'Tracking'], ['#/data', 'Data']];
+const tabFor = hash => (hash.startsWith('#/templates') ? '#/releases' : hash.startsWith('#/summary') ? '#/tracking' : hash);
 
 export function init(c) {
   ctx = c;
@@ -129,6 +47,12 @@ const ROUTES = [
   [/^#\/songs$/, songsView],
   [/^#\/releases\/([\w-]+)$/, releaseEditor],
   [/^#\/releases$/, releasesView],
+  [/^#\/templates\/([\w-]+)$/, templateEditor],
+  [/^#\/templates$/, templatesView],
+  [/^#\/posts\/([\w-]+)$/, postEditor],
+  [/^#\/posts$/, postsView],
+  [/^#\/summary\/([\w-]+)$/, summaryView],
+  [/^#\/tracking$/, trackingView],
   [/^#\/data$/, dataView],
 ];
 
@@ -141,54 +65,13 @@ export async function route() {
     const view = fn(...m.slice(1));
     $('app').replaceChildren(view);
     document.querySelectorAll('#tabs a').forEach(a => {
-      if (hash.startsWith(a.getAttribute('href'))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+      if (tabFor(hash).startsWith(a.getAttribute('href'))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     window.scrollTo(0, 0);
     return;
   }
   location.replace('#/songs');
 }
-
-const notFound = (what, back) => h('div', { class: 'view' },
-  h('p', {}, what + ' not found. It may have been deleted, or it lives on another device.'),
-  h('a', { class: 'btn', href: back }, 'Back'));
-
-// ---------- shared widgets ----------
-const pill = (status, label) => h('span', { class: 'pill s-' + status }, label || cap(status));
-
-function select(options, value, onChange, cls) {
-  const el = h('select', { class: cls }, options.map(([v, l]) => h('option', { value: v }, l)));
-  el.value = value;
-  if (el.value !== value) { el.append(h('option', { value }, value)); el.value = value; }
-  if (onChange) el.addEventListener('change', () => onChange(el.value));
-  return el;
-}
-
-const field = (label, el, hint) => h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), el, hint || null);
-const hint = txt => h('small', { class: 'hint' }, txt);
-
-function textInput(rec, sn, prop, o = {}) {
-  const el = h('input', {
-    type: o.type || 'text', value: rec[prop] ?? '', placeholder: o.placeholder || '',
-    autocomplete: 'off', ...(o.attrs || {}),
-  });
-  if (o.list) el.setAttribute('list', o.list);
-  el.addEventListener('input', () => {
-    rec[prop] = o.coerce ? o.coerce(el.value) : el.value;
-    store.touch(sn, rec);
-    if (o.after) o.after(el);
-  });
-  return el;
-}
-
-function textArea(rec, sn, prop, rows = 4, placeholder = '') {
-  const el = h('textarea', { rows, placeholder, value: rec[prop] || '' });
-  el.addEventListener('input', () => { rec[prop] = el.value; store.touch(sn, rec); });
-  return el;
-}
-
-const datalist = (id, values) => h('datalist', { id }, values.map(v => h('option', { value: v })));
-const numOrNull = v => (v === '' ? null : Number(v));
 
 // ---------- SONGS ----------
 function songsView() {
@@ -383,7 +266,9 @@ function releasesView() {
 
   const view = h('div', { class: 'view' },
     h('div', { class: 'actions' },
-      h('button', { class: 'btn primary', type: 'button', onclick: () => { const r = store.createRelease(); location.hash = '#/releases/' + r.id; } }, '+ Add release')),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { const r = store.createRelease(); location.hash = '#/releases/' + r.id; } }, '+ Add release'),
+      h('a', { class: 'btn', href: '#/templates' }, 'Checklist templates')),
+    comingUpPanel(),
     h('div', { class: 'filters' }, h('div', { class: 'filter-row' }, artistSel, typeSel, sortSel)),
     count, listEl);
   draw();
@@ -393,12 +278,13 @@ function releasesView() {
 function releaseCard(r) {
   const [state, label] = releaseState(r);
   const n = store.releaseSongs(r.id).length;
+  const cp = checklistProgress(r);
   const when = r.actualDate ? fmtDate(r.actualDate) : r.plannedDate ? 'Planned ' + fmtDate(r.plannedDate) : '';
   return h('a', { class: 'card', href: '#/releases/' + r.id },
     coverBox(r, 'cover-sm'),
     h('div', { class: 'card-main' },
       h('div', { class: 'card-title' }, r.title || 'Untitled'),
-      h('div', { class: 'card-meta' }, [typeLabel(r.type), r.artist, when, n + ' track' + (n === 1 ? '' : 's')].filter(Boolean).join(' · '))),
+      h('div', { class: 'card-meta' }, [typeLabel(r.type), r.artist, when, n + ' track' + (n === 1 ? '' : 's'), cp.total ? cp.done + '/' + cp.total + ' done' + (cp.overdue ? ', ' + cp.overdue + ' overdue' : '') : ''].filter(Boolean).join(' · '))),
     pill(state, label));
 }
 
@@ -520,6 +406,7 @@ function releaseEditor(id) {
     datalist('dl-platforms', ['Spotify', 'Apple Music', 'YouTube Music', 'Amazon Music', 'Bandcamp', 'SoundCloud', 'Tidal', 'Deezer', 'Pre-save']),
     datalist('dl-distributors', ['DistroKid', 'TuneCore', 'CD Baby', 'Amuse', 'UnitedMasters', 'Ditto', 'RouteNote']),
     h('input', { class: 'title-input', value: rec.title, placeholder: 'Untitled release', 'aria-label': 'Release title', autocomplete: 'off', oninput: e => { rec.title = e.target.value; save(); } }),
+    h('div', { class: 'actions' }, h('a', { class: 'btn', href: '#/summary/' + rec.id }, 'Summary and numbers')),
     h('div', { class: 'cover-row' }, coverHolder, field('Cover file name', coverName), fileIn),
     h('div', { class: 'grid' },
       field('Type', select(RELEASE_TYPES, rec.type, v => { rec.type = v; save(); })),
@@ -531,12 +418,14 @@ function releaseEditor(id) {
     h('section', { class: 'panel' }, h('h3', {}, 'Tracklist'), tracksEl, h('div', { class: 'actions' }, addSel)),
     h('section', { class: 'panel' }, h('h3', {}, 'Platform links'), linksEl,
       h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onclick: () => { rec.links.push({ platform: '', url: '' }); save(); drawLinks(); } }, '+ Add link'))),
+    checklistPanel(rec),
+    promoPanel(rec),
     field('Notes', textArea(rec, 'releases', 'notes', 4)),
     h('div', { class: 'actions end' },
       h('button', {
         class: 'btn danger', type: 'button',
         onclick: async () => {
-          if (!(await confirmBox('Delete this release?', '“' + (rec.title || 'Untitled') + '” will be removed. Its songs stay in your catalogue; they just lose this release.', 'Delete', true))) return;
+          if (!(await confirmBox('Delete this release?', '“' + (rec.title || 'Untitled') + '” will be removed, along with the numbers you recorded for it. Its songs and posts stay; they just lose this release.', 'Delete', true))) return;
           await store.deleteRelease(rec.id);
           location.hash = '#/releases';
         },
@@ -545,7 +434,7 @@ function releaseEditor(id) {
 
 // ---------- DATA ----------
 function dataView() {
-  const counts = store.songs.size + ' song' + (store.songs.size === 1 ? '' : 's') + ', ' + store.releases.size + ' release' + (store.releases.size === 1 ? '' : 's');
+  const counts = plural(store.songs.size, 'song') + ', ' + plural(store.releases.size, 'release') + ', ' + plural(store.posts.size, 'post');
   const last = io.lastBackup();
   const backupLine = h('p', { class: 'muted' }, last ? 'Last backup: ' + new Date(last).toLocaleString() : 'You have not made a backup on this device yet.');
   const persistLine = h('p', { class: 'muted' }, 'Checking storage…');
@@ -597,12 +486,14 @@ async function importBackup() {
   if (parsed.error) { await info('Could not import', parsed.error); return; }
   let mode = 'merge';
   const out = h('div', {});
+  const NAMES = { songs: ['song', 'songs'], releases: ['release', 'releases'], posts: ['post', 'posts'], metrics: ['number entry', 'number entries'], templates: ['template', 'templates'] };
+  const listOf = pick => Object.keys(NAMES).filter(k => pick(k) > 0).map(k => pick(k) + ' ' + NAMES[k][pick(k) === 1 ? 0 : 1]).join(', ');
   const draw = () => {
     const p = io.planBackup(parsed, mode);
     out.replaceChildren(
       h('p', {}, mode === 'merge'
-        ? 'Adds ' + p.addedSongs + ' song(s) and ' + p.addedReleases + ' release(s); updates ' + p.updatedSongs + ' and ' + p.updatedReleases + ' that are newer in the backup. Nothing is deleted.'
-        : 'Replaces your whole catalogue with the backup (' + p.songs.length + ' songs, ' + p.releases.length + ' releases). This removes ' + p.removedSongs + ' song(s) and ' + p.removedReleases + ' release(s) that are not in it.'),
+        ? 'Adds ' + (listOf(k => p.counts[k].added) || 'nothing') + '. Updates ' + (listOf(k => p.counts[k].updated) || 'nothing') + ' that are newer in the backup. Nothing is deleted.'
+        : 'Replaces your whole catalogue with the backup (' + (listOf(k => parsed.records[k].length) || 'nothing') + '). This removes ' + (listOf(k => p.counts[k].removed) || 'nothing') + ' that are not in it.'),
       mode === 'replace' ? h('p', { class: 'warn' }, 'Export your current catalogue first if you might want it back.') : null,
       parsed.dropped ? h('p', { class: 'muted' }, parsed.dropped + ' invalid record(s) in the file were ignored.') : null);
   };
@@ -610,7 +501,7 @@ async function importBackup() {
     h('input', { type: 'radio', name: 'imode', value, checked: value === mode, onchange: () => { mode = value; draw(); } }), label);
   draw();
   if ((await modal('Import backup', [
-    h('p', {}, 'Backup contains ' + parsed.songs.length + ' song(s) and ' + parsed.releases.length + ' release(s).'),
+    h('p', {}, 'Backup contains ' + (listOf(k => parsed.records[k].length) || 'nothing') + '.'),
     radio('merge', 'Merge into what I have (recommended)'), radio('replace', 'Replace everything'), out,
   ], [{ label: 'Cancel', value: false }, { label: 'Import', value: true, kind: 'primary' }])) !== true) return;
   const plan = io.planBackup(parsed, mode);

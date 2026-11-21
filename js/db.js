@@ -2,7 +2,7 @@
 // Every write resolves only when its transaction has completed.
 
 const DB_NAME = 'annales-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -13,8 +13,8 @@ export function open() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      // Later stages add stores here under a higher DB_VERSION; never remove existing ones.
-      for (const name of ['songs', 'releases']) {
+      // v1: songs, releases. v2: posts, metrics, templates. Stores are only ever added, never removed.
+      for (const name of ['songs', 'releases', 'posts', 'metrics', 'templates']) {
         if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' });
       }
     };

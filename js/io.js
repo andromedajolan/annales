@@ -1,6 +1,6 @@
 // Whole-catalogue Export / Import (format "annales-backup", schema 1; see docs/DATA_FORMAT.md).
 import * as store from './store.js';
-import { SCHEMA, normalizeSong, normalizeRelease } from './model.js';
+import { SCHEMA, normalizeSong, normalizeRelease, normalizePost, normalizeMetric, normalizeTemplate } from './model.js';
 
 const LAST_BACKUP_KEY = 'annales.lastBackup';
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
@@ -24,6 +24,8 @@ export function downloadBackup() {
   return obj;
 }
 
+const NORMALIZERS = { songs: normalizeSong, releases: normalizeRelease, posts: normalizePost, metrics: normalizeMetric, templates: normalizeTemplate };
+
 export function parseBackup(text) {
   let o;
   try { o = JSON.parse(text); } catch { return { error: 'That is not valid JSON.' }; }
@@ -31,40 +33,39 @@ export function parseBackup(text) {
   if (!o || o.format !== 'annales-backup') return { error: 'This is not an Annales backup.' };
   if (typeof o.schema !== 'number' || o.schema > SCHEMA) return { error: 'This backup was made by a newer version of Annales. Update the app first.' };
   if (!Array.isArray(o.songs) || !Array.isArray(o.releases)) return { error: 'The backup is missing its songs or releases list.' };
-  const songs = [], releases = [];
+  const records = {};
   let dropped = 0;
-  const seenS = new Set(), seenR = new Set();
-  for (const x of o.songs) { const n = normalizeSong(x); if (n && !seenS.has(n.id)) { seenS.add(n.id); songs.push(n); } else dropped++; }
-  for (const x of o.releases) { const n = normalizeRelease(x); if (n && !seenR.has(n.id)) { seenR.add(n.id); releases.push(n); } else dropped++; }
-  return { songs, releases, dropped, exported: typeof o.exported === 'string' ? o.exported : '' };
+  for (const name of store.COLLECTIONS) {
+    records[name] = [];
+    const seen = new Set();
+    // posts, metrics and templates arrived in schema 2; older backups simply do not have them
+    for (const x of Array.isArray(o[name]) ? o[name] : []) {
+      const n = NORMALIZERS[name](x);
+      if (n && !seen.has(n.id)) { seen.add(n.id); records[name].push(n); } else dropped++;
+    }
+  }
+  return { records, dropped, exported: typeof o.exported === 'string' ? o.exported : '' };
 }
 
-// Merge: incoming records are added; existing ones are replaced only if the incoming copy is newer.
+// What an import would do, per collection. Merge: add new records; replace an existing one only if the incoming copy is newer.
 export function planBackup(parsed, mode) {
-  if (mode === 'replace') {
-    return {
-      songs: parsed.songs, releases: parsed.releases,
-      addedSongs: parsed.songs.length, updatedSongs: 0, addedReleases: parsed.releases.length, updatedReleases: 0,
-      removedSongs: [...store.songs.keys()].filter(id => !parsed.songs.some(s => s.id === id)).length,
-      removedReleases: [...store.releases.keys()].filter(id => !parsed.releases.some(r => r.id === id)).length,
-    };
-  }
-  const pick = (incoming, existing) => {
+  const records = {}, counts = {};
+  for (const name of store.COLLECTIONS) {
+    const incoming = parsed.records[name], existing = store.maps[name];
+    if (mode === 'replace') {
+      records[name] = incoming;
+      counts[name] = { added: incoming.length, updated: 0, removed: Array.from(existing.keys()).filter(id => !incoming.some(r => r.id === id)).length };
+      continue;
+    }
     const take = []; let added = 0, updated = 0;
     for (const rec of incoming) {
       const ex = existing.get(rec.id);
-      if (!ex) { take.push(rec); added++; }
-      else if (rec.updated > ex.updated) { take.push(rec); updated++; }
+      if (!ex) { take.push(rec); added++; } else if (rec.updated > ex.updated) { take.push(rec); updated++; }
     }
-    return { take, added, updated };
-  };
-  const s = pick(parsed.songs, store.songs);
-  const r = pick(parsed.releases, store.releases);
-  return {
-    songs: s.take, releases: r.take,
-    addedSongs: s.added, updatedSongs: s.updated, addedReleases: r.added, updatedReleases: r.updated,
-    removedSongs: 0, removedReleases: 0,
-  };
+    records[name] = take;
+    counts[name] = { added, updated, removed: 0 };
+  }
+  return { records, counts };
 }
 
-export const applyBackup = (plan, mode) => store.applyRecords(plan.songs, plan.releases, mode);
+export const applyBackup = (plan, mode) => store.applyRecords(plan.records, mode);

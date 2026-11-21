@@ -2,7 +2,7 @@
 import * as store from './store.js';
 import * as ui from './ui.js';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.4.0';
 
 const THEMES = ['dark', 'gray', 'light'];
 const THEME_COLORS = { dark: '#111216', gray: '#25252b', light: '#f6f3f4' };
